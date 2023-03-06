@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::value::Value;
 
 #[derive(Debug, Copy, Clone)]
@@ -18,10 +20,25 @@ impl TryFrom<u8> for OpCode {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct Rle<T: Debug + Copy> {
+    num: u8,
+    value: T,
+}
+
+impl<T: Debug + Copy> Rle<T> {
+    fn new(value: T) -> Self {
+        Self { num: 1, value }
+    }
+    fn increment(&mut self) {
+        self.num += 1;
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Chunk {
     code: Vec<u8>,
-    lines: Vec<usize>,
+    lines: Vec<Rle<usize>>,
     constants: Vec<Value>,
 }
 
@@ -36,7 +53,23 @@ impl Chunk {
 
     pub fn write_byte(&mut self, byte: u8, line: usize) {
         self.code.push(byte);
-        self.lines.push(line);
+        match self.lines.last_mut() {
+            Some(last_line) if last_line.value == line => {
+                last_line.increment();
+            }
+            _ => self.lines.push(Rle::new(line)),
+        }
+    }
+
+    pub fn get_line(&self, offset: usize) -> usize {
+        let mut start = 0;
+        for rle in &self.lines {
+            if (start..(start + rle.num)).contains(&(offset as u8)) {
+                return rle.value;
+            }
+            start += rle.num;
+        }
+        panic!("Offset `{offset}` not associated with any line");
     }
 
     pub fn add_constant(&mut self, value: Value) -> usize {
@@ -54,10 +87,10 @@ impl Chunk {
 
     fn disassemble_instruction(&self, offset: usize) -> usize {
         print!("{offset:04} ");
-        if offset > 0 && self.lines[offset] == self.lines[offset - 1] {
+        if offset > 0 && self.get_line(offset) == self.get_line(offset - 1) {
             print!("   | ");
         } else {
-            print!("{:4} ", self.lines[offset]);
+            print!("{:4} ", self.get_line(offset));
         }
         if let Ok(instruction) = OpCode::try_from(self.code[offset]) {
             match instruction {
