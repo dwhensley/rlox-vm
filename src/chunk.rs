@@ -1,6 +1,21 @@
 use std::fmt::Debug;
 
 use crate::value::Value;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ChunkError {
+    #[error("Unrecognized OpCode `{0}`")]
+    ParseOpCode(u8),
+    #[error("Attempted to construct too many (short) constants (<= 255)")]
+    TooManyConstantsShort,
+    #[error("Attempted to construct too many (long) constants (<= 65,536)")]
+    TooManyConstantsLong,
+    #[error("Offset `{0}` not associated with any line")]
+    ParseLineForOffset(usize),
+}
+
+pub type ChunkResult<T> = Result<T, ChunkError>;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]
@@ -11,13 +26,13 @@ pub enum OpCode {
 }
 
 impl TryFrom<u8> for OpCode {
-    type Error = ();
+    type Error = ChunkError;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             v if v == OpCode::Return as u8 => Ok(OpCode::Return),
             v if v == OpCode::Constant as u8 => Ok(OpCode::Constant),
             v if v == OpCode::ConstantLong as u8 => Ok(OpCode::ConstantLong),
-            _ => Err(()),
+            _ => Err(ChunkError::ParseOpCode(value)),
         }
     }
 }
@@ -63,39 +78,44 @@ impl Chunk {
         }
     }
 
-    pub fn write_constant(&mut self, value: Value, line: usize) {
+    pub fn write_constant(&mut self, value: Value, line: usize) -> ChunkResult<()> {
         if self.constants.len() < u8::MAX as usize {
-            self.write_constant_short(value, line);
+            self.write_constant_short(value, line)
         } else {
-            self.write_constant_long(value, line);
+            self.write_constant_long(value, line)
         }
     }
 
-    fn write_constant_short(&mut self, value: Value, line: usize) {
+    fn write_constant_short(&mut self, value: Value, line: usize) -> ChunkResult<()> {
         let constant_idx = self.add_constant(value);
         self.write_byte(OpCode::Constant as u8, line);
-        self.write_byte(constant_idx.try_into().expect("Too many constants!"), line);
+        let trunc_idx = constant_idx
+            .try_into()
+            .map_err(|_| ChunkError::TooManyConstantsShort)?;
+        self.write_byte(trunc_idx, line);
+        Ok(())
     }
 
-    fn write_constant_long(&mut self, value: Value, line: usize) {
+    fn write_constant_long(&mut self, value: Value, line: usize) -> ChunkResult<()> {
         let constant_idx = self.add_constant(value);
         self.write_byte(OpCode::ConstantLong as u8, line);
         let [b1, b2] = TryInto::<u16>::try_into(constant_idx)
-            .expect("Too many (long) constants!")
+            .map_err(|_| ChunkError::TooManyConstantsLong)?
             .to_le_bytes();
         self.write_byte(b1, line);
         self.write_byte(b2, line);
+        Ok(())
     }
 
-    pub fn get_line(&self, offset: usize) -> usize {
+    pub fn get_line(&self, offset: usize) -> ChunkResult<usize> {
         let mut start = 0;
         for rle in &self.lines {
             if (start..(start + rle.num as usize)).contains(&offset) {
-                return rle.value;
+                return Ok(rle.value);
             }
             start += rle.num as usize;
         }
-        panic!("Offset `{offset}` not associated with any line");
+        Err(ChunkError::ParseLineForOffset(offset))
     }
 
     pub fn add_constant(&mut self, value: Value) -> usize {
@@ -103,29 +123,33 @@ impl Chunk {
         self.constants.len() - 1
     }
 
-    pub fn disassemble(&self, name: &str) {
+    pub fn disassemble(&self, name: &str) -> ChunkResult<()> {
         println!("== {name} ==");
         let mut offset = 0;
         while offset < self.len() {
-            offset = self.disassemble_instruction(offset);
+            offset = self.disassemble_instruction(offset)?;
         }
+        Ok(())
     }
 
-    fn disassemble_instruction(&self, offset: usize) -> usize {
+    fn disassemble_instruction(&self, offset: usize) -> ChunkResult<usize> {
         print!("{offset:04} ");
-        if offset > 0 && self.get_line(offset) == self.get_line(offset - 1) {
+        let line = self.get_line(offset)?;
+        if offset > 0 && line == self.get_line(offset - 1)? {
             print!("   | ");
         } else {
-            print!("{:4} ", self.get_line(offset));
+            print!("{line:4} ");
         }
         if let Ok(instruction) = OpCode::try_from(self.code[offset]) {
             match instruction {
-                OpCode::Constant => self.constant_instruction("OP_CONSTANT", offset),
-                OpCode::ConstantLong => self.constant_long_instruction("OP_CONSTANT_LONG", offset),
-                OpCode::Return => Self::simple_instruction("OP_RETURN", offset),
+                OpCode::Constant => Ok(self.constant_instruction("OP_CONSTANT", offset)),
+                OpCode::ConstantLong => {
+                    Ok(self.constant_long_instruction("OP_CONSTANT_LONG", offset))
+                }
+                OpCode::Return => Ok(Self::simple_instruction("OP_RETURN", offset)),
             }
         } else {
-            panic!("Unknown opcode {}", self.code[offset]);
+            Err(ChunkError::ParseOpCode(self.code[offset]))
         }
     }
 
