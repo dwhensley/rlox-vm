@@ -6,10 +6,16 @@ use chunk::{Chunk, OpCode};
 fn main() {
     let mut chunk = Chunk::new();
 
-    let constant_idx = chunk.add_constant(1.2);
-    chunk.write_byte(OpCode::Constant as u8, 123);
-    chunk.write_byte(constant_idx.try_into().expect("Too many constants"), 123);
-    chunk.write_byte(OpCode::Return as u8, 123);
+    chunk.write_constant(1.2, 123);
+    chunk.write_constant(3.4, 123);
+    chunk.write_constant(5.7, 124);
+    chunk.write_constant(10.2, 126);
+
+    for v in 0..255 {
+        chunk.write_constant(v as value::Value, 126 + v);
+    }
+
+    chunk.write_byte(OpCode::Return as u8, 127);
 
     chunk.disassemble("test chunk");
 }

@@ -7,6 +7,7 @@ use crate::value::Value;
 pub enum OpCode {
     Return,
     Constant,
+    ConstantLong,
 }
 
 impl TryFrom<u8> for OpCode {
@@ -15,6 +16,7 @@ impl TryFrom<u8> for OpCode {
         match value {
             v if v == OpCode::Return as u8 => Ok(OpCode::Return),
             v if v == OpCode::Constant as u8 => Ok(OpCode::Constant),
+            v if v == OpCode::ConstantLong as u8 => Ok(OpCode::ConstantLong),
             _ => Err(()),
         }
     }
@@ -61,13 +63,37 @@ impl Chunk {
         }
     }
 
+    pub fn write_constant(&mut self, value: Value, line: usize) {
+        if self.constants.len() < u8::MAX as usize {
+            self.write_constant_short(value, line);
+        } else {
+            self.write_constant_long(value, line);
+        }
+    }
+
+    fn write_constant_short(&mut self, value: Value, line: usize) {
+        let constant_idx = self.add_constant(value);
+        self.write_byte(OpCode::Constant as u8, line);
+        self.write_byte(constant_idx.try_into().expect("Too many constants!"), line);
+    }
+
+    fn write_constant_long(&mut self, value: Value, line: usize) {
+        let constant_idx = self.add_constant(value);
+        self.write_byte(OpCode::ConstantLong as u8, line);
+        let [b1, b2] = TryInto::<u16>::try_into(constant_idx)
+            .expect("Too many (long) constants!")
+            .to_le_bytes();
+        self.write_byte(b1, line);
+        self.write_byte(b2, line);
+    }
+
     pub fn get_line(&self, offset: usize) -> usize {
         let mut start = 0;
         for rle in &self.lines {
-            if (start..(start + rle.num)).contains(&(offset as u8)) {
+            if (start..(start + rle.num as usize)).contains(&offset) {
                 return rle.value;
             }
-            start += rle.num;
+            start += rle.num as usize;
         }
         panic!("Offset `{offset}` not associated with any line");
     }
@@ -95,6 +121,7 @@ impl Chunk {
         if let Ok(instruction) = OpCode::try_from(self.code[offset]) {
             match instruction {
                 OpCode::Constant => self.constant_instruction("OP_CONSTANT", offset),
+                OpCode::ConstantLong => self.constant_long_instruction("OP_CONSTANT_LONG", offset),
                 OpCode::Return => Self::simple_instruction("OP_RETURN", offset),
             }
         } else {
@@ -113,5 +140,15 @@ impl Chunk {
         print!("{}", self.constants[constant_idx as usize]);
         println!("'");
         offset + 2
+    }
+
+    fn constant_long_instruction(&self, name: &str, offset: usize) -> usize {
+        let b1 = self.code[offset + 1];
+        let b2 = self.code[offset + 2];
+        let constant_idx = u16::from_le_bytes([b1, b2]);
+        print!("{name:-16} {constant_idx:4} '");
+        print!("{}", self.constants[constant_idx as usize]);
+        println!("'");
+        offset + 3
     }
 }
