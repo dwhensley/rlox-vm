@@ -20,18 +20,28 @@ pub type ChunkResult<T> = Result<T, ChunkError>;
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum OpCode {
-    Return,
     Constant,
     ConstantLong,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
+    Return,
 }
 
 impl TryFrom<u8> for OpCode {
     type Error = ChunkError;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            v if v == OpCode::Return as u8 => Ok(OpCode::Return),
             v if v == OpCode::Constant as u8 => Ok(OpCode::Constant),
             v if v == OpCode::ConstantLong as u8 => Ok(OpCode::ConstantLong),
+            v if v == OpCode::Add as u8 => Ok(OpCode::Add),
+            v if v == OpCode::Subtract as u8 => Ok(OpCode::Subtract),
+            v if v == OpCode::Multiply as u8 => Ok(OpCode::Multiply),
+            v if v == OpCode::Divide as u8 => Ok(OpCode::Divide),
+            v if v == OpCode::Negate as u8 => Ok(OpCode::Negate),
+            v if v == OpCode::Return as u8 => Ok(OpCode::Return),
             _ => Err(ChunkError::ParseOpCode(value)),
         }
     }
@@ -54,9 +64,9 @@ impl<T: Debug + Copy> Rle<T> {
 
 #[derive(Debug, Clone, Default)]
 pub struct Chunk {
-    code: Vec<u8>,
-    lines: Vec<Rle<usize>>,
-    constants: Vec<Value>,
+    pub(crate) code: Vec<u8>,
+    pub(crate) lines: Vec<Rle<usize>>,
+    pub(crate) constants: Vec<Value>,
 }
 
 impl Chunk {
@@ -132,7 +142,7 @@ impl Chunk {
         Ok(())
     }
 
-    fn disassemble_instruction(&self, offset: usize) -> ChunkResult<usize> {
+    pub fn disassemble_instruction(&self, offset: usize) -> ChunkResult<usize> {
         print!("{offset:04} ");
         let line = self.get_line(offset)?;
         if offset > 0 && line == self.get_line(offset - 1)? {
@@ -146,6 +156,11 @@ impl Chunk {
                 OpCode::ConstantLong => {
                     Ok(self.constant_long_instruction("OP_CONSTANT_LONG", offset))
                 }
+                OpCode::Add => Ok(Self::simple_instruction("OP_ADD", offset)),
+                OpCode::Subtract => Ok(Self::simple_instruction("OP_SUBTRACT", offset)),
+                OpCode::Multiply => Ok(Self::simple_instruction("OP_MULTIPLY", offset)),
+                OpCode::Divide => Ok(Self::simple_instruction("OP_DIVIDE", offset)),
+                OpCode::Negate => Ok(Self::simple_instruction("OP_NEGATE", offset)),
                 OpCode::Return => Ok(Self::simple_instruction("OP_RETURN", offset)),
             }
         } else {
