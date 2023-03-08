@@ -8,8 +8,8 @@ const STACK_MAX: usize = 256;
 macro_rules! binary_op {
     ($self:ident, $op:tt) => {{
         let b = $self.pop();
-        let a = $self.pop();
-        $self.push(a $op b);
+        // Don't explicitly pop `b` off -- update in place.
+        unsafe { *($self.stack_top.sub(1)) = *($self.stack_top.sub(1)) $op b };
     }}
 }
 
@@ -95,8 +95,7 @@ impl Vm {
                         self.push(constant);
                     }
                     OpCode::Negate => {
-                        let v = -self.pop();
-                        self.push(v);
+                        unsafe { *(self.stack_top.sub(1)) = -*(self.stack_top.sub(1)) };
                     }
                     OpCode::Add => binary_op!(self, +),
                     OpCode::Subtract => binary_op!(self, -),
