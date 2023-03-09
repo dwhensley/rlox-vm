@@ -62,6 +62,7 @@ impl Vm {
     }
 
     pub fn run(&mut self) -> InterpretResult<()> {
+        use OpCode::*;
         loop {
             #[cfg(debug_assertions)]
             {
@@ -82,32 +83,31 @@ impl Vm {
             }
 
             let byte = unsafe { self.read_byte() };
-            if let Some(instruction) = OpCode::from_u8(byte) {
-                match instruction {
-                    OpCode::Constant => {
-                        let constant = self.read_constant();
-                        self.push(constant);
-                    }
-                    OpCode::ConstantLong => {
-                        let constant = self.read_constant_long();
-                        self.push(constant);
-                    }
-                    OpCode::Negate => {
-                        unsafe { *(self.stack_top.sub(1)) = -*(self.stack_top.sub(1)) };
-                    }
-                    OpCode::Add => binary_op!(self, +),
-                    OpCode::Subtract => binary_op!(self, -),
-                    OpCode::Multiply => binary_op!(self, *),
-                    OpCode::Divide => binary_op!(self, /),
-                    OpCode::Return => {
-                        println!("{}", self.pop());
-                        return Ok(());
-                    }
+            match OpCode::from_u8(byte) {
+                Some(Constant) => {
+                    let constant = self.read_constant();
+                    self.push(constant);
                 }
-            } else {
-                return Err(InterpretError::Runtime(format!(
-                    "Unsupported opcode: `{byte}`"
-                )));
+                Some(ConstantLong) => {
+                    let constant = self.read_constant_long();
+                    self.push(constant);
+                }
+                Some(Negate) => {
+                    unsafe { *(self.stack_top.sub(1)) = -*(self.stack_top.sub(1)) };
+                }
+                Some(Add) => binary_op!(self, +),
+                Some(Subtract) => binary_op!(self, -),
+                Some(Multiply) => binary_op!(self, *),
+                Some(Divide) => binary_op!(self, /),
+                Some(Return) => {
+                    println!("{}", self.pop());
+                    return Ok(());
+                }
+                None => {
+                    return Err(InterpretError::Runtime(format!(
+                        "Unsupported opcode: `{byte}`"
+                    )));
+                }
             }
         }
     }
