@@ -17,10 +17,10 @@ pub enum ChunkError {
 
 pub type ChunkResult<T> = Result<T, ChunkError>;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum OpCode {
-    Constant,
+    Constant = 0,
     ConstantLong,
     Add,
     Subtract,
@@ -30,19 +30,20 @@ pub enum OpCode {
     Return,
 }
 
-impl TryFrom<u8> for OpCode {
-    type Error = ChunkError;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+impl OpCode {
+    #[inline]
+    pub fn from_u8(value: u8) -> Option<Self> {
+        use OpCode::*;
         match value {
-            v if v == OpCode::Constant as u8 => Ok(OpCode::Constant),
-            v if v == OpCode::ConstantLong as u8 => Ok(OpCode::ConstantLong),
-            v if v == OpCode::Add as u8 => Ok(OpCode::Add),
-            v if v == OpCode::Subtract as u8 => Ok(OpCode::Subtract),
-            v if v == OpCode::Multiply as u8 => Ok(OpCode::Multiply),
-            v if v == OpCode::Divide as u8 => Ok(OpCode::Divide),
-            v if v == OpCode::Negate as u8 => Ok(OpCode::Negate),
-            v if v == OpCode::Return as u8 => Ok(OpCode::Return),
-            _ => Err(ChunkError::ParseOpCode(value)),
+            0 => Some(Constant),
+            1 => Some(ConstantLong),
+            2 => Some(Add),
+            3 => Some(Subtract),
+            4 => Some(Multiply),
+            5 => Some(Divide),
+            6 => Some(Negate),
+            7 => Some(Return),
+            _ => None,
         }
     }
 }
@@ -150,7 +151,7 @@ impl Chunk {
         } else {
             print!("{line:4} ");
         }
-        if let Ok(instruction) = OpCode::try_from(self.code[offset]) {
+        if let Some(instruction) = OpCode::from_u8(self.code[offset]) {
             match instruction {
                 OpCode::Constant => Ok(self.constant_instruction("OP_CONSTANT", offset)),
                 OpCode::ConstantLong => {

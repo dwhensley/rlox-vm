@@ -82,9 +82,7 @@ impl Vm {
             }
 
             let byte = unsafe { self.read_byte() };
-            if let Ok(instruction) =
-                OpCode::try_from(byte).map_err(|e| InterpretError::Runtime(e.to_string()))
-            {
+            if let Some(instruction) = OpCode::from_u8(byte) {
                 match instruction {
                     OpCode::Constant => {
                         let constant = self.read_constant();
@@ -106,6 +104,10 @@ impl Vm {
                         return Ok(());
                     }
                 }
+            } else {
+                return Err(InterpretError::Runtime(format!(
+                    "Unsupported opcode: `{byte}`"
+                )));
             }
         }
     }
