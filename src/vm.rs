@@ -114,8 +114,9 @@ impl Vm {
 
     #[inline]
     unsafe fn read_byte(&mut self) -> u8 {
+        let byte = *self.ip;
         self.ip = self.ip.add(1);
-        *(self.ip.sub(1))
+        byte
     }
 
     fn read_constant(&mut self) -> Value {
